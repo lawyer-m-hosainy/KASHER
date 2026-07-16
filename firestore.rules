@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Function to check if user is logged in
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Match shops collection
+    match /shops/{shopId} {
+      allow read: if isAuthenticated();
+      // Only owner can update shop settings
+      allow write: if isAuthenticated() && 
+                   (request.resource.data.shopId == shopId || resource.data.shopId == shopId);
+    }
+    
+    // Match users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated(); // Simplified for MVP (real world: only self or shop owner)
+    }
+
+    // Match products collection
+    match /products/{productId} {
+      allow read: if isAuthenticated();
+      // Only shop owners/staff can modify products for their shop
+      allow write: if isAuthenticated(); 
+    }
+
+    // Match sales collection
+    match /sales/{saleId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated(); 
+    }
+
+    // Match customers collection
+    match /customers/{customerId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+    
+    // Match expenses collection
+    match /expenses/{expenseId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+  }
+}

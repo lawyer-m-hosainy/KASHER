@@ -1,0 +1,6 @@
+{
+  "name": "كاشير سريع",
+  "description": "تطبيق إدارة المبيعات ونقاط البيع (POS) مع دعم لطباعة الفواتير ومسح الباركود.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

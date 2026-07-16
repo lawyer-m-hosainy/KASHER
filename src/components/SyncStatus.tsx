@@ -1,0 +1,117 @@
+import { useState, useEffect } from 'react';
+import { Wifi, WifiOff, RefreshCw } from 'lucide-react';
+import { getOfflineSales, deleteOfflineSale } from '../lib/offlineDb';
+import { addDoc, collection, updateDoc, doc, increment } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { useAuth } from '../contexts/AuthContext';
+
+export function SyncStatus() {
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const { shop } = useAuth();
+
+  const checkPending = async () => {
+    try {
+      const sales = await getOfflineSales();
+      setPendingCount(sales.length);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    checkPending();
+    const interval = setInterval(checkPending, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isOnline && pendingCount > 0 && shop && !isSyncing) {
+      syncOfflineData();
+    }
+  }, [isOnline, pendingCount, shop]);
+
+  const syncOfflineData = async () => {
+    if (isSyncing || !shop) return;
+    setIsSyncing(true);
+
+    try {
+      const sales = await getOfflineSales();
+      for (const sale of sales) {
+        // Push to Firebase
+        await addDoc(collection(db, 'sales'), {
+          shopId: sale.shopId,
+          branchId: sale.branchId || null,
+          cashierId: sale.cashierId,
+          customerId: sale.customerId || null,
+          items: sale.items,
+          subtotal: sale.subtotal || sale.total,
+          discount: sale.discount || 0,
+          total: sale.total,
+          createdAt: sale.createdAt
+        });
+
+        // Update Customer purchases
+        if (sale.customerId) {
+          try {
+            await updateDoc(doc(db, 'customers', sale.customerId), {
+              totalPurchases: increment(sale.total)
+            });
+          } catch (err) {
+            console.error("Error updating customer during sync", err);
+          }
+        }
+
+        // Deduct Inventory in Firebase
+        for (const item of sale.items) {
+          await updateDoc(doc(db, 'products', item.productId), {
+            quantity: increment(-item.qty)
+          });
+        }
+
+        // Remove from local DB
+        await deleteOfflineSale(sale.id);
+      }
+      checkPending();
+    } catch (error) {
+      console.error('Error syncing data', error);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-3">
+      {isOnline ? (
+        <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 text-sm font-medium">
+          <Wifi size={16} /> متصل
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 text-rose-600 bg-rose-50 px-3 py-1.5 rounded-lg border border-rose-100 text-sm font-medium">
+          <WifiOff size={16} /> غير متصل
+        </div>
+      )}
+
+      {pendingCount > 0 && (
+        <div className="flex items-center gap-2 text-amber-600 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-100 text-sm font-medium">
+          <RefreshCw size={16} className={isSyncing ? "animate-spin" : ""} />
+          {isSyncing ? 'جاري المزامنة...' : `${pendingCount} قيد الانتظار`}
+        </div>
+      )}
+    </div>
+  );
+}
