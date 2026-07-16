@@ -9,12 +9,13 @@ interface PrintableReceiptProps {
   subtotal?: number;
   discount?: number;
   total: number;
+  vatAmount?: number;
   date: Date;
   printerSettings?: PrinterSettings;
 }
 
 export const PrintableReceipt = forwardRef<HTMLDivElement, PrintableReceiptProps>(
-  ({ shopName, cashierName, customerName, items, subtotal, discount, total, date, printerSettings }, ref) => {
+  ({ shopName, cashierName, customerName, items, subtotal, discount, total, vatAmount, date, printerSettings }, ref) => {
     const widthClass = printerSettings?.type === 'a4' ? 'w-[210mm]' : 'w-[80mm]';
     const textSizeClass = printerSettings?.type === 'a4' ? 'text-base' : 'text-sm';
     

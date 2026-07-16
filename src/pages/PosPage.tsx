@@ -120,7 +120,8 @@ export default function PosPage() {
         discount: discountAmount,
         total,
         vatAmount,
-        date: new Date(now),
+        createdAt: now,
+        cashierId: appUser.userId,
         customerId: selectedCustomerId || null
       };
 

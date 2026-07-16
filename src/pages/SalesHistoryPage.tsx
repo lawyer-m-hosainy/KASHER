@@ -33,14 +33,14 @@ export default function SalesHistoryPage() {
         collection(db, 'sales'),
         where('shopId', '==', shop.shopId),
         ...(currentBranchId ? [where('branchId', '==', currentBranchId)] : []),
-        orderBy('date', 'desc')
+        orderBy('createdAt', 'desc')
       );
       
       const snapshot = await getDocs(q);
       const salesData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
-        date: doc.data().date.toDate()
+        date: doc.data().createdAt ? new Date(doc.data().createdAt) : (doc.data().date ? doc.data().date.toDate() : new Date())
       })) as Sale[];
       
       setSales(salesData);

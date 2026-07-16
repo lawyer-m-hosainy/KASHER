@@ -65,7 +65,9 @@ export default function ReportsPage() {
   }).reverse();
 
   sales.forEach(sale => {
-    const saleDate = new Date(sale.createdAt);
+    const rawSale = sale as any;
+    const timestamp = rawSale.createdAt || (rawSale.date?.seconds ? rawSale.date.seconds * 1000 : rawSale.date) || Date.now();
+    const saleDate = new Date(timestamp);
     const dayMatch = last7Days.find(d => 
       saleDate >= startOfDay(d.date) && saleDate <= endOfDay(d.date)
     );
