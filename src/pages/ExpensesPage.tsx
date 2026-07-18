@@ -6,11 +6,13 @@ import { Expense } from '../types';
 import { Wallet, Plus, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 export default function ExpensesPage() {
   const { shop, currentBranchId, appUser } = useAuth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
+  const [confirmState, setConfirmState] = useState({ isOpen: false, id: '' });
   
   const [showForm, setShowForm] = useState(false);
   const [amount, setAmount] = useState('');
@@ -64,14 +66,19 @@ export default function ExpensesPage() {
     }
   };
 
-  const deleteExpense = async (id: string) => {
-    if (confirm('هل أنت متأكد من حذف هذا المصروف؟')) {
-      try {
-        await deleteDoc(doc(db, 'expenses', id));
-        fetchExpenses();
-      } catch (error) {
-        console.error("Error deleting expense", error);
-      }
+  const deleteExpense = (id: string) => {
+    setConfirmState({ isOpen: true, id });
+  };
+
+  const executeDelete = async () => {
+    const id = confirmState.id;
+    setConfirmState({ isOpen: false, id: '' });
+    if (!id) return;
+    try {
+      await deleteDoc(doc(db, 'expenses', id));
+      fetchExpenses();
+    } catch (error) {
+      console.error("Error deleting expense", error);
     }
   };
 
@@ -156,6 +163,14 @@ export default function ExpensesPage() {
           </tbody>
         </table>
       </div>
+      
+      <ConfirmModal
+        isOpen={confirmState.isOpen}
+        title="تأكيد الحذف"
+        message="هل أنت متأكد من حذف هذا المصروف؟"
+        onConfirm={executeDelete}
+        onCancel={() => setConfirmState({ isOpen: false, id: '' })}
+      />
     </div>
   );
 }

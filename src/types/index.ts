@@ -23,6 +23,7 @@ export interface Shop {
   createdAt: number;
   printerSettings?: PrinterSettings;
   branches?: Branch[];
+  categories?: string[];
   vatEnabled?: boolean;
   vatRate?: number;
   vatNumber?: string;
@@ -44,6 +45,7 @@ export interface Product {
   name: string;
   barcode?: string;
   category: string;
+  unit?: 'piece' | 'kg';
   price: number;
   costPrice?: number;
   quantity: number;
@@ -81,6 +83,7 @@ export interface Sale {
   shopId: string;
   branchId?: string;
   cashierId: string;
+  cashierName?: string;
   customerId?: string;
   items: SaleItem[];
   subtotal: number;

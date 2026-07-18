@@ -1,16 +1,19 @@
 import { useState, useEffect, FormEvent } from 'react';
-import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc, limit, startAfter, orderBy, DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Product } from '../types';
-import { PackagePlus, Edit2, Trash2, Search, AlertCircle } from 'lucide-react';
+import { PackagePlus, Edit2, Trash2, Search, AlertCircle, Download } from 'lucide-react';
 import { toast } from 'sonner';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 export default function InventoryPage() {
   const { shop, currentBranchId } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [hasMore, setHasMore] = useState(true);
   
   // Form state
   const [showForm, setShowForm] = useState(false);
@@ -18,22 +21,43 @@ export default function InventoryPage() {
   const [name, setName] = useState('');
   const [barcode, setBarcode] = useState('');
   const [category, setCategory] = useState('');
+  const [unit, setUnit] = useState<'piece' | 'kg'>('piece');
   const [price, setPrice] = useState('');
   const [costPrice, setCostPrice] = useState('');
   const [quantity, setQuantity] = useState('');
   const [lowStockThreshold, setLowStockThreshold] = useState('5');
+  const [confirmState, setConfirmState] = useState({ isOpen: false, id: '' });
 
-  const fetchProducts = async () => {
+  const fetchProducts = async (isLoadMore = false) => {
     if (!shop || !currentBranchId) return;
     setLoading(true);
     try {
-      const q = query(
-        collection(db, 'products'), 
+      let baseQuery = query(
+        collection(db, 'products'),
         where('shopId', '==', shop.shopId),
-        where('branchId', '==', currentBranchId)
+        where('branchId', '==', currentBranchId),
+        orderBy('name'),
+        limit(25)
       );
-      const snapshot = await getDocs(q);
-      setProducts(snapshot.docs.map(doc => ({ ...doc.data(), productId: doc.id } as Product)));
+
+      if (isLoadMore && lastVisible) {
+        baseQuery = query(baseQuery, startAfter(lastVisible));
+      }
+
+      const snapshot = await getDocs(baseQuery);
+
+      setHasMore(snapshot.docs.length === 25);
+      if (snapshot.docs.length > 0) {
+        setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
+      }
+
+      const newProducts = snapshot.docs.map(doc => ({ ...doc.data(), productId: doc.id } as Product));
+      
+      if (isLoadMore) {
+        setProducts(prev => [...prev, ...newProducts]);
+      } else {
+        setProducts(newProducts);
+      }
     } catch (error) {
       console.error(error);
     } finally {
@@ -55,6 +79,7 @@ export default function InventoryPage() {
       name,
       barcode: barcode || undefined,
       category,
+      unit,
       price: Number(price),
       costPrice: costPrice ? Number(costPrice) : undefined,
       quantity: Number(quantity),
@@ -77,7 +102,13 @@ export default function InventoryPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('هل أنت متأكد من حذف هذا المنتج؟')) return;
+    setConfirmState({ isOpen: true, id });
+  };
+
+  const executeDelete = async () => {
+    const id = confirmState.id;
+    setConfirmState({ isOpen: false, id: '' });
+    if (!id) return;
     try {
       await deleteDoc(doc(db, 'products', id));
       toast.success('تم حذف المنتج بنجاح');
@@ -92,6 +123,7 @@ export default function InventoryPage() {
     setName(p.name);
     setBarcode(p.barcode || '');
     setCategory(p.category || '');
+    setUnit(p.unit || 'piece');
     setPrice(String(p.price));
     setCostPrice(p.costPrice ? String(p.costPrice) : '');
     setQuantity(String(p.quantity));
@@ -104,6 +136,7 @@ export default function InventoryPage() {
     setName('');
     setBarcode('');
     setCategory('');
+    setUnit('piece');
     setPrice('');
     setCostPrice('');
     setQuantity('');
@@ -112,17 +145,49 @@ export default function InventoryPage() {
 
   const filtered = products.filter(p => p.name.includes(search) || p.category?.includes(search) || p.barcode?.includes(search));
 
+  const exportCSV = () => {
+    const headers = ['\u0627\u0644\u0627\u0633\u0645','\u0627\u0644\u0628\u0627\u0631\u0643\u0648\u062f','\u0627\u0644\u062a\u0635\u0646\u064a\u0641','\u0627\u0644\u0648\u062d\u062f\u0629','\u0633\u0639\u0631 \u0627\u0644\u0628\u064a\u0639','\u0633\u0639\u0631 \u0627\u0644\u062a\u0643\u0644\u0641\u0629','\u0627\u0644\u0643\u0645\u064a\u0629','\u062d\u062f \u0627\u0644\u062a\u0646\u0628\u064a\u0647'];
+    const rows = filtered.map(p => [
+      p.name,
+      p.barcode || '',
+      p.category || '',
+      p.unit === 'kg' ? '\u0643\u064a\u0644\u0648\u062c\u0631\u0627\u0645' : '\u0642\u0637\u0639\u0629',
+      p.price,
+      p.costPrice || '',
+      p.quantity,
+      p.lowStockThreshold
+    ]);
+    const bom = '\uFEFF';
+    const csv = bom + [headers, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `inventory_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="bg-white rounded-3xl border border-slate-100 shadow-sm min-h-full p-8 flex flex-col">
       <div className="flex justify-between items-center mb-8">
         <h2 className="text-2xl font-bold text-slate-800">إدارة المخزون</h2>
-        <button 
-          onClick={() => { resetForm(); setShowForm(!showForm); }}
-          className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-600/20 transition font-bold text-sm"
-        >
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={exportCSV}
+            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 transition font-bold text-sm border border-emerald-100"
+          >
+            <Download size={18} />
+            <span>تصدير CSV</span>
+          </button>
+          <button 
+            onClick={() => { resetForm(); setShowForm(!showForm); }}
+            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-600/20 transition font-bold text-sm"
+          >
           <PackagePlus size={20} />
           <span>إضافة منتج جديد</span>
-        </button>
+          </button>
+        </div>
       </div>
 
       {showForm && (
@@ -136,8 +201,38 @@ export default function InventoryPage() {
             <input type="text" value={barcode} onChange={e=>setBarcode(e.target.value)} className="w-full p-2 border rounded-md" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">الفئة</label>
-            <input type="text" value={category} onChange={e=>setCategory(e.target.value)} className="w-full p-2 border rounded-md" />
+            <label className="block text-sm font-bold text-slate-700 mb-2">التصنيف</label>
+            <select 
+              required
+              className="w-full p-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+              value={category}
+              onChange={e => setCategory(e.target.value)}
+            >
+              {(!shop?.categories || shop.categories.length === 0) ? (
+                <option value="عام">عام</option>
+              ) : (
+                <>
+                  <option value="" disabled>اختر التصنيف...</option>
+                  {shop.categories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                  {category && !shop.categories.includes(category) && (
+                    <option value={category}>{category}</option>
+                  )}
+                </>
+              )}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2">وحدة القياس</label>
+            <select 
+              className="w-full p-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+              value={unit}
+              onChange={e => setUnit(e.target.value as 'piece' | 'kg')}
+            >
+              <option value="piece">قطعة</option>
+              <option value="kg">كيلوجرام</option>
+            </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">سعر البيع (ج.م)</label>
@@ -218,7 +313,26 @@ export default function InventoryPage() {
             )}
           </tbody>
         </table>
+        {hasMore && (
+          <div className="flex justify-center p-4 bg-white border-t border-gray-100">
+            <button 
+              onClick={() => fetchProducts(true)}
+              disabled={loading}
+              className="px-6 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 font-medium transition-colors"
+            >
+              {loading ? 'جاري التحميل...' : 'عرض المزيد'}
+            </button>
+          </div>
+        )}
       </div>
+
+      <ConfirmModal
+        isOpen={confirmState.isOpen}
+        title="تأكيد الحذف"
+        message="هل أنت متأكد من حذف هذا المنتج؟"
+        onConfirm={executeDelete}
+        onCancel={() => setConfirmState({ isOpen: false, id: '' })}
+      />
     </div>
   );
 }

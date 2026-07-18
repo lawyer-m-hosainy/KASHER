@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Printer, Save, Building2, Plus, Trash2 } from 'lucide-react';
+import { Printer, Save, Building2, Plus, Trash2, Tags } from 'lucide-react';
 import { PrinterSettings, Branch } from '../types';
 import { toast } from 'sonner';
 
@@ -29,6 +29,9 @@ export default function SettingsPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [newBranchName, setNewBranchName] = useState('');
 
+  const [categories, setCategories] = useState<string[]>([]);
+  const [newCategoryName, setNewCategoryName] = useState('');
+
   useEffect(() => {
     if (shop?.printerSettings) {
       setPrinterSettings(shop.printerSettings);
@@ -38,6 +41,9 @@ export default function SettingsPage() {
     } else if (shop) {
       // Default branch if none exist
       setBranches([{ id: 'main', name: 'الفرع الرئيسي' }]);
+    }
+    if (shop?.categories) {
+      setCategories(shop.categories);
     }
   }, [shop]);
 
@@ -63,6 +69,21 @@ export default function SettingsPage() {
     setBranches(branches.filter(b => b.id !== id));
   };
 
+  const handleAddCategory = () => {
+    if (!newCategoryName.trim()) return;
+    const cat = newCategoryName.trim();
+    if (categories.includes(cat)) {
+      toast.error('هذا التصنيف موجود بالفعل');
+      return;
+    }
+    setCategories([...categories, cat]);
+    setNewCategoryName('');
+  };
+
+  const handleRemoveCategory = (cat: string) => {
+    setCategories(categories.filter(c => c !== cat));
+  };
+
   const handleSave = async () => {
     if (!shop) return;
     setLoading(true);
@@ -71,6 +92,7 @@ export default function SettingsPage() {
       await updateDoc(doc(db, 'shops', shop.shopId), {
         printerSettings,
         branches,
+        categories,
         vatEnabled,
         vatRate,
         vatNumber
@@ -221,6 +243,52 @@ export default function SettingsPage() {
                 className="flex items-center gap-2 px-6 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold transition-all"
               >
                 <Plus size={20} /> إضافة فرع
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Categories Settings */}
+      <div>
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <Tags className="text-slate-500" /> تصنيفات المنتجات
+          </h2>
+          <p className="text-slate-500 mt-2">إدارة التصنيفات لتنظيم المنتجات في المخزن ونقطة البيع.</p>
+        </div>
+
+        <div className="max-w-2xl bg-slate-50 p-6 rounded-2xl border border-slate-100">
+          <div className="space-y-4">
+            <div className="flex flex-wrap gap-3">
+              {categories.map(cat => (
+                <div key={cat} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl shadow-sm">
+                  <span className="font-bold text-slate-700">{cat}</span>
+                  <button 
+                    onClick={() => handleRemoveCategory(cat)}
+                    className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    title="حذف التصنيف"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
+              {categories.length === 0 && <span className="text-slate-400 text-sm py-2">لا توجد تصنيفات مضافة</span>}
+            </div>
+            
+            <div className="flex gap-3 pt-4 border-t border-slate-200">
+              <input 
+                type="text" 
+                value={newCategoryName}
+                onChange={e => setNewCategoryName(e.target.value)}
+                placeholder="اسم التصنيف الجديد..."
+                className="flex-1 p-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+              <button 
+                onClick={handleAddCategory}
+                className="flex items-center gap-2 px-6 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold transition-all"
+              >
+                <Plus size={20} /> إضافة تصنيف
               </button>
             </div>
           </div>

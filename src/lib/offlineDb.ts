@@ -6,6 +6,7 @@ export interface OfflineSale {
   shopId: string;
   branchId?: string;
   cashierId: string;
+  cashierName?: string;
   customerId?: string;
   invoiceNumber?: string;
   vatAmount?: number;

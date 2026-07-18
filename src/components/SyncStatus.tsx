@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import { getOfflineSales, deleteOfflineSale, clearOfflineStockUpdate } from '../lib/offlineDb';
-import { addDoc, collection, updateDoc, doc, increment, runTransaction } from 'firebase/firestore';
+import { collection, updateDoc, doc, increment, runTransaction, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -53,11 +53,12 @@ export function SyncStatus() {
       const sales = await getOfflineSales();
       for (const sale of sales) {
         try {
-          // Push to Firebase
-          await addDoc(collection(db, 'sales'), {
+          // Push to Firebase with setDoc for idempotency
+          await setDoc(doc(db, 'sales', sale.id), {
             shopId: sale.shopId,
             branchId: sale.branchId || null,
             cashierId: sale.cashierId,
+            cashierName: sale.cashierName || null,
             customerId: sale.customerId || null,
             invoiceNumber: sale.invoiceNumber || null,
             vatAmount: sale.vatAmount || 0,

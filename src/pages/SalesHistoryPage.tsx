@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, getDocs, limit, startAfter, DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Sale } from '../types';
@@ -14,6 +14,8 @@ export default function SalesHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
+  const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [hasMore, setHasMore] = useState(true);
 
   const printRef = useRef<HTMLDivElement>(null);
   
@@ -25,25 +27,43 @@ export default function SalesHistoryPage() {
     fetchSales();
   }, [shop, currentBranchId]);
 
-  const fetchSales = async () => {
+  const fetchSales = async (isLoadMore = false) => {
     if (!shop) return;
     setLoading(true);
     try {
-      const q = query(
+      let baseQuery = query(
         collection(db, 'sales'),
         where('shopId', '==', shop.shopId),
         ...(currentBranchId ? [where('branchId', '==', currentBranchId)] : []),
-        orderBy('createdAt', 'desc')
+        orderBy('createdAt', 'desc'),
+        limit(25)
       );
+
+      if (isLoadMore && lastVisible) {
+        baseQuery = query(baseQuery, startAfter(lastVisible));
+      }
       
-      const snapshot = await getDocs(q);
-      const salesData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        date: doc.data().createdAt ? new Date(doc.data().createdAt) : (doc.data().date ? doc.data().date.toDate() : new Date())
-      })) as unknown as Sale[];
+      const snapshot = await getDocs(baseQuery);
+
+      setHasMore(snapshot.docs.length === 25);
+      if (snapshot.docs.length > 0) {
+        setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
+      }
+
+      const salesData = snapshot.docs.map(doc => {
+        const data = doc.data() as any;
+        return {
+          id: doc.id,
+          ...data,
+          date: data.createdAt ? new Date(data.createdAt) : (data.date ? data.date.toDate() : new Date())
+        };
+      }) as Sale[];
       
-      setSales(salesData);
+      if (isLoadMore) {
+        setSales(prev => [...prev, ...salesData]);
+      } else {
+        setSales(salesData);
+      }
     } catch (error) {
       console.error(error);
       toast.error('حدث خطأ أثناء جلب الفواتير');
@@ -127,6 +147,17 @@ export default function SalesHistoryPage() {
               )}
             </tbody>
           </table>
+          {hasMore && (
+            <div className="flex justify-center p-4 bg-white border-t border-slate-100">
+              <button 
+                onClick={() => fetchSales(true)}
+                disabled={loading}
+                className="px-6 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 font-medium transition-colors"
+              >
+                {loading ? 'جاري التحميل...' : 'عرض المزيد'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -136,7 +167,7 @@ export default function SalesHistoryPage() {
           <div ref={printRef}>
             <PrintableReceipt 
               shopName={shop?.name || ''}
-              cashierName={selectedSale.cashierId || 'كاشير'}
+              cashierName={selectedSale.cashierName || 'كاشير'}
               items={selectedSale.items}
               subtotal={selectedSale.subtotal}
               discount={selectedSale.discount}

@@ -6,12 +6,14 @@ import { Customer } from '../types';
 import { Users, UserPlus, Search, Edit2, Trash2 } from 'lucide-react';
 import { TableSkeleton } from '../components/Skeleton';
 import { toast } from 'sonner';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 export default function CustomersPage() {
   const { shop } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [confirmState, setConfirmState] = useState({ isOpen: false, id: '' });
   
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState('');
@@ -68,14 +70,19 @@ export default function CustomersPage() {
     setShowForm(true);
   };
 
-  const deleteCustomer = async (id: string) => {
-    if (confirm('هل أنت متأكد من حذف هذا العميل؟')) {
-      try {
-        await deleteDoc(doc(db, 'customers', id));
-        fetchCustomers();
-      } catch (error) {
-        console.error("Error deleting customer", error);
-      }
+  const deleteCustomer = (id: string) => {
+    setConfirmState({ isOpen: true, id });
+  };
+
+  const executeDelete = async () => {
+    const id = confirmState.id;
+    setConfirmState({ isOpen: false, id: '' });
+    if (!id) return;
+    try {
+      await deleteDoc(doc(db, 'customers', id));
+      fetchCustomers();
+    } catch (error) {
+      console.error("Error deleting customer", error);
     }
   };
 
@@ -165,6 +172,14 @@ export default function CustomersPage() {
           </tbody>
         </table>
       </div>
+
+      <ConfirmModal
+        isOpen={confirmState.isOpen}
+        title="تأكيد الحذف"
+        message="هل أنت متأكد من حذف هذا العميل؟"
+        onConfirm={executeDelete}
+        onCancel={() => setConfirmState({ isOpen: false, id: '' })}
+      />
     </div>
   );
 }

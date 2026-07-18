@@ -8,6 +8,7 @@ import { useReactToPrint } from 'react-to-print';
 import { PrintableReceipt } from '../components/PrintableReceipt';
 import { BarcodeScanner } from '../components/BarcodeScanner';
 import { toast } from 'sonner';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 export default function PosPage() {
   const { shop, appUser, currentBranchId } = useAuth();
@@ -19,6 +20,7 @@ export default function PosPage() {
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
   const [lastSale, setLastSale] = useState<{items: SaleItem[], subtotal?: number, discount?: number, total: number, vatAmount?: number, date: Date, customerId?: string} | null>(null);
   const [showScanner, setShowScanner] = useState(false);
+  const [alertState, setAlertState] = useState({ isOpen: false, message: '' });
   
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [discountPercent, setDiscountPercent] = useState<number>(0);
@@ -65,20 +67,27 @@ export default function PosPage() {
     fetchData();
   }, [shop, currentBranchId]);
 
-  const addToCart = (product: Product, quantityToAdd: number = 1) => {
+  const getStepForProduct = (productId: string) => {
+    const p = products.find(pr => pr.productId === productId);
+    return p?.unit === 'kg' ? 0.1 : 1;
+  };
+
+  const addToCart = (product: Product, quantityToAdd?: number) => {
+    const step = product.unit === 'kg' ? 0.1 : 1;
+    const qtyToAdd = quantityToAdd ?? step;
     const existing = cart.find(item => item.productId === product.productId);
     if (existing) {
-      if (existing.qty + quantityToAdd > product.quantity) {
-         alert('الكمية المتاحة لا تكفي!');
+      if (existing.qty + qtyToAdd > product.quantity) {
+         setAlertState({ isOpen: true, message: 'الكمية المتاحة لا تكفي!' });
          return;
       }
-      setCart(cart.map(item => item.productId === product.productId ? { ...item, qty: item.qty + quantityToAdd } : item));
+      setCart(cart.map(item => item.productId === product.productId ? { ...item, qty: parseFloat((item.qty + qtyToAdd).toFixed(3)) } : item));
     } else {
-      if (product.quantity < quantityToAdd) {
-        alert('المنتج غير متوفر في المخزن بالكمية المطلوبة!');
+      if (product.quantity < qtyToAdd) {
+        setAlertState({ isOpen: true, message: 'المنتج غير متوفر في المخزن بالكمية المطلوبة!' });
         return;
       }
-      setCart([...cart, { productId: product.productId, name: product.name, price: product.price, qty: quantityToAdd }]);
+      setCart([...cart, { productId: product.productId, name: product.name, price: product.price, qty: qtyToAdd }]);
     }
   };
 
@@ -87,7 +96,9 @@ export default function PosPage() {
     if (!item) return;
     
     const product = products.find(p => p.productId === productId);
-    const newQty = item.qty + delta;
+    const step = product?.unit === 'kg' ? 0.1 : 1;
+    const actualDelta = delta > 0 ? step : -step;
+    const newQty = parseFloat((item.qty + actualDelta).toFixed(3));
     
     if (newQty <= 0) {
       setCart(cart.filter(i => i.productId !== productId));
@@ -95,7 +106,7 @@ export default function PosPage() {
     }
     
     if (product && newQty > product.quantity) {
-       alert('الكمية المتاحة لا تكفي!');
+       setAlertState({ isOpen: true, message: 'الكمية المتاحة لا تكفي!' });
        return;
     }
 
@@ -158,6 +169,7 @@ export default function PosPage() {
             vatAmount,
             createdAt: now,
             cashierId: appUser.userId,
+            cashierName: appUser.email,
             customerId: selectedCustomerId || null
           };
 
@@ -211,6 +223,7 @@ export default function PosPage() {
           vatAmount,
           createdAt: now,
           cashierId: appUser.userId,
+          cashierName: appUser.email,
           customerId: selectedCustomerId || null
         };
 
@@ -390,8 +403,8 @@ export default function PosPage() {
             >
               <span className="font-bold text-slate-800 line-clamp-2 group-hover:text-blue-600 transition-colors">{product.name}</span>
               <div className="flex justify-between items-end w-full mt-2">
-                <span className="text-sm text-slate-500">{product.quantity > 0 ? `المتاح: ${product.quantity}` : <span className="text-red-500 font-bold bg-red-50 px-2 py-1 rounded-md">نفد</span>}</span>
-                <span className="font-black text-blue-600 text-lg">{product.price} <span className="text-xs font-normal">ج.م</span></span>
+                <span className="text-sm text-slate-500">{product.quantity > 0 ? `المتاح: ${product.quantity} ${product.unit === 'kg' ? 'كج' : ''}` : <span className="text-red-500 font-bold bg-red-50 px-2 py-1 rounded-md">نفد</span>}</span>
+                <span className="font-black text-blue-600 text-lg">{product.price} <span className="text-xs font-normal">ج.م{product.unit === 'kg' ? '/كج' : ''}</span></span>
               </div>
             </button>
           ))}
@@ -511,6 +524,16 @@ export default function PosPage() {
           </button>
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={alertState.isOpen}
+        title="تنبيه"
+        message={alertState.message}
+        confirmText="حسناً"
+        cancelText="إغلاق"
+        onConfirm={() => setAlertState({ isOpen: false, message: '' })}
+        onCancel={() => setAlertState({ isOpen: false, message: '' })}
+      />
     </div>
   );
 }

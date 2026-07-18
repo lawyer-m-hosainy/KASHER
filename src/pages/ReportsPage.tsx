@@ -6,7 +6,7 @@ import { Sale, AppUser, Expense, Product } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { format, subDays, startOfDay, endOfDay } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import { TrendingUp, DollarSign, ShoppingBag, ArrowUpRight, ReceiptText, BarChart as BarChartIcon, BarChart3, Users, Printer, Wallet } from 'lucide-react';
+import { TrendingUp, DollarSign, ShoppingBag, ArrowUpRight, ReceiptText, BarChart as BarChartIcon, BarChart3, Users, Printer, Wallet, Download } from 'lucide-react';
 
 export default function ReportsPage() {
   const { shop, currentBranchId } = useAuth();
@@ -112,23 +112,44 @@ export default function ReportsPage() {
 
   // Cashier Performance
   const cashierStats: Record<string, { email: string, revenue: number, salesCount: number }> = {};
-  users.forEach(u => {
-    cashierStats[u.userId] = { email: u.email, revenue: 0, salesCount: 0 };
-  });
 
   sales.forEach(sale => {
-    if (sale.cashierId) {
-      if (!cashierStats[sale.cashierId]) {
-        cashierStats[sale.cashierId] = { email: 'كاشير محذوف/غير معروف', revenue: 0, salesCount: 0 };
-      }
-      cashierStats[sale.cashierId].revenue += sale.total;
-      cashierStats[sale.cashierId].salesCount += 1;
+    const key = sale.cashierName || sale.cashierId || 'غير معروف';
+    if (!cashierStats[key]) {
+      cashierStats[key] = { email: key, revenue: 0, salesCount: 0 };
     }
+    cashierStats[key].revenue += sale.total;
+    cashierStats[key].salesCount += 1;
   });
 
   const cashierPerformance = Object.values(cashierStats)
     .filter(stat => stat.salesCount > 0)
     .sort((a, b) => b.revenue - a.revenue);
+
+  const exportSalesCSV = () => {
+    const headers = ['رقم الفاتورة','التاريخ','الكاشير','عدد العناصر','المجموع الفرعي','الخصم','الإجمالي'];
+    const rows = sales.map(s => {
+      const ts = (s as any).createdAt || Date.now();
+      return [
+        (s as any).invoiceNumber || '',
+        new Date(ts).toLocaleString('ar-EG'),
+        s.cashierName || s.cashierId || '',
+        s.items.reduce((sum, i) => sum + i.qty, 0),
+        s.subtotal,
+        s.discount || 0,
+        s.total
+      ];
+    });
+    const bom = '\uFEFF';
+    const csv = bom + [headers, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sales_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   if (loading) return <div className="p-8">جاري التحميل...</div>;
 
@@ -136,13 +157,22 @@ export default function ReportsPage() {
     <div className="flex-1 flex flex-col h-full overflow-auto print:overflow-visible print:h-auto">
       <div className="flex justify-between items-center mb-6 print:hidden shrink-0">
         <h2 className="text-2xl font-bold text-slate-800">تقارير المبيعات</h2>
-        <button 
-          onClick={() => window.print()}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-sm"
-        >
-          <Printer size={18} />
-          تصدير كـ PDF
-        </button>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={exportSalesCSV}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl font-bold hover:bg-emerald-100 transition-colors border border-emerald-100"
+          >
+            <Download size={18} />
+            تصدير CSV
+          </button>
+          <button 
+            onClick={() => window.print()}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            <Printer size={18} />
+            تصدير كـ PDF
+          </button>
+        </div>
       </div>
       
       <div className="hidden print:block mb-8 text-center shrink-0">
