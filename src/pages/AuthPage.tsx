@@ -63,7 +63,8 @@ export default function AuthPage() {
           userId,
           shopId,
           role: 'owner',
-          email
+          email,
+          isAdmin: false
         });
         
         toast.success('تم إنشاء الحساب بنجاح!');
