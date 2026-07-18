@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, KeyboardEvent } from 'react';
-import { collection, query, where, getDocs, addDoc, updateDoc, doc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, updateDoc, doc, setDoc, runTransaction, increment } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Product, SaleItem, Customer } from '../types';
@@ -17,7 +17,7 @@ export default function PosPage() {
   const [cart, setCart] = useState<SaleItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
-  const [lastSale, setLastSale] = useState<{items: SaleItem[], subtotal?: number, discount?: number, total: number, date: Date, customerId?: string} | null>(null);
+  const [lastSale, setLastSale] = useState<{items: SaleItem[], subtotal?: number, discount?: number, total: number, vatAmount?: number, date: Date, customerId?: string} | null>(null);
   const [showScanner, setShowScanner] = useState(false);
   
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
@@ -39,7 +39,19 @@ export default function PosPage() {
           where('branchId', '==', currentBranchId)
         );
         const pSnapshot = await getDocs(pQ);
-        setProducts(pSnapshot.docs.map(doc => ({ ...doc.data(), productId: doc.id } as Product)));
+        const fetchedProducts = pSnapshot.docs.map(doc => ({ ...doc.data(), productId: doc.id } as Product));
+
+        if (!navigator.onLine) {
+          const { getOfflineStockUpdates } = await import('../lib/offlineDb');
+          const offlineUpdates = await getOfflineStockUpdates();
+          for (const update of offlineUpdates) {
+            const prod = fetchedProducts.find(p => p.productId === update.productId);
+            if (prod) {
+              prod.quantity = Math.max(0, prod.quantity - update.decrementQty);
+            }
+          }
+        }
+        setProducts(fetchedProducts);
 
         const cQ = query(collection(db, 'customers'), where('shopId', '==', shop.shopId));
         const cSnapshot = await getDocs(cQ);
@@ -103,54 +115,95 @@ export default function PosPage() {
     
     try {
       const now = Date.now();
-      
-      const invoiceNumber = Math.floor(100000 + Math.random() * 900000).toString();
       const newSaleId = `sale-${now}`;
-      const saleData = {
-        invoiceNumber,
-        shopId: shop.shopId,
-        branchId: currentBranchId,
-        items: cart.map(item => ({
-          productId: item.productId,
-          name: item.name,
-          price: item.price,
-          qty: item.qty
-        })),
-        subtotal,
-        discount: discountAmount,
-        total,
-        vatAmount,
-        createdAt: now,
-        cashierId: appUser.userId,
-        customerId: selectedCustomerId || null
-      };
+      let finalInvoiceNumber = '';
 
       if (navigator.onLine) {
-        await setDoc(doc(db, 'sales', newSaleId), saleData);
+        await runTransaction(db, async (transaction) => {
+          const counterRef = doc(db, 'counters', shop.shopId);
+          const counterSnap = await transaction.get(counterRef);
+          let newSeq = 1;
+          if (counterSnap.exists()) {
+             newSeq = (counterSnap.data().lastInvoiceNumber || 0) + 1;
+             transaction.update(counterRef, { lastInvoiceNumber: newSeq });
+          } else {
+             transaction.set(counterRef, { lastInvoiceNumber: newSeq });
+          }
+          finalInvoiceNumber = newSeq.toString().padStart(6, '0');
 
-        // Update Customer purchases
+          const saleData = {
+            invoiceNumber: finalInvoiceNumber,
+            shopId: shop.shopId,
+            branchId: currentBranchId,
+            items: cart.map(item => ({
+              productId: item.productId,
+              name: item.name,
+              price: item.price,
+              qty: item.qty
+            })),
+            subtotal,
+            discount: discountAmount,
+            total,
+            vatAmount,
+            createdAt: now,
+            cashierId: appUser.userId,
+            customerId: selectedCustomerId || null
+          };
+
+          const saleRef = doc(db, 'sales', newSaleId);
+          transaction.set(saleRef, saleData);
+
+          if (selectedCustomerId) {
+            const customerRef = doc(db, 'customers', selectedCustomerId);
+            transaction.update(customerRef, {
+              totalPurchases: increment(total)
+            });
+          }
+
+          for (const item of cart) {
+            const productRef = doc(db, 'products', item.productId);
+            transaction.update(productRef, {
+              quantity: increment(-item.qty)
+            });
+          }
+        });
+
+        // Update local state after successful transaction
         if (selectedCustomerId) {
           const customer = customers.find(c => c.id === selectedCustomerId);
           if (customer) {
-            await updateDoc(doc(db, 'customers', selectedCustomerId), {
-              totalPurchases: (customer.totalPurchases || 0) + total
-            });
+            customer.totalPurchases = (customer.totalPurchases || 0) + total;
           }
         }
 
-        // Deduct Inventory in Firebase
         for (const item of cart) {
           const product = products.find(p => p.productId === item.productId);
           if (product) {
-            const newQuantity = product.quantity - item.qty;
-            await updateDoc(doc(db, 'products', item.productId), {
-              quantity: newQuantity
-            });
-            product.quantity = newQuantity; 
+            product.quantity = product.quantity - item.qty;
           }
         }
       } else {
         // Offline Mode
+        finalInvoiceNumber = `OFF-${now.toString().slice(-6)}`;
+        const saleData = {
+          invoiceNumber: finalInvoiceNumber,
+          shopId: shop.shopId,
+          branchId: currentBranchId,
+          items: cart.map(item => ({
+            productId: item.productId,
+            name: item.name,
+            price: item.price,
+            qty: item.qty
+          })),
+          subtotal,
+          discount: discountAmount,
+          total,
+          vatAmount,
+          createdAt: now,
+          cashierId: appUser.userId,
+          customerId: selectedCustomerId || null
+        };
+
         const { saveOfflineSale } = await import('../lib/offlineDb');
         await saveOfflineSale({
           id: now.toString() + Math.random().toString(36).substring(7),

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { Sale, AppUser, Expense } from '../types';
+import { Sale, AppUser, Expense, Product } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { format, subDays, startOfDay, endOfDay } from 'date-fns';
 import { ar } from 'date-fns/locale';
@@ -13,6 +13,7 @@ export default function ReportsPage() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [users, setUsers] = useState<AppUser[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -39,6 +40,14 @@ export default function ReportsPage() {
         const usersQ = query(collection(db, 'users'), where('shopId', '==', shop.shopId));
         const usersSnapshot = await getDocs(usersQ);
         setUsers(usersSnapshot.docs.map(doc => doc.data() as AppUser));
+
+        const productsQ = query(
+          collection(db, 'products'), 
+          where('shopId', '==', shop.shopId),
+          ...(currentBranchId ? [where('branchId', '==', currentBranchId)] : [])
+        );
+        const productsSnapshot = await getDocs(productsQ);
+        setProducts(productsSnapshot.docs.map(doc => ({ ...doc.data(), productId: doc.id } as Product)));
       } catch (error) {
         console.error("Error fetching data", error);
       } finally {
@@ -52,7 +61,16 @@ export default function ReportsPage() {
   const totalRevenue = sales.reduce((sum, sale) => sum + sale.total, 0);
   const totalDiscounts = sales.reduce((sum, sale) => sum + (sale.discount || 0), 0);
   const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
-  const netProfit = totalRevenue - totalExpenses;
+  
+  const totalCogs = sales.reduce((sum, sale) => {
+    return sum + sale.items.reduce((itemSum, item) => {
+      const product = products.find(p => p.productId === item.productId);
+      const cost = product?.costPrice || 0;
+      return itemSum + (cost * item.qty);
+    }, 0);
+  }, 0);
+
+  const netProfit = totalRevenue - totalCogs - totalExpenses;
   
   // Last 7 days data for chart
   const last7Days = Array.from({ length: 7 }).map((_, i) => {

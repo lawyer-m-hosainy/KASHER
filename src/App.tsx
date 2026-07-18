@@ -40,7 +40,7 @@ export default function App() {
           
           {/* Admin Dashboard */}
           <Route path="/admin" element={
-            <ProtectedRoute requireActiveSubscription={false}>
+            <ProtectedRoute requireActiveSubscription={false} requireAdmin={true}>
               <AdminDashboard />
             </ProtectedRoute>
           } />
@@ -80,6 +80,11 @@ export default function App() {
             <Route path="/expenses" element={
               <ProtectedRoute allowedRoles={['owner', 'cashier']}>
                 <ExpensesPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/sales-history" element={
+              <ProtectedRoute allowedRoles={['owner', 'cashier']}>
+                <SalesHistoryPage />
               </ProtectedRoute>
             } />
           </Route>

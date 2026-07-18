@@ -41,7 +41,7 @@ export default function SalesHistoryPage() {
         id: doc.id,
         ...doc.data(),
         date: doc.data().createdAt ? new Date(doc.data().createdAt) : (doc.data().date ? doc.data().date.toDate() : new Date())
-      })) as Sale[];
+      })) as unknown as Sale[];
       
       setSales(salesData);
     } catch (error) {
@@ -135,9 +135,15 @@ export default function SalesHistoryPage() {
         {selectedSale && (
           <div ref={printRef}>
             <PrintableReceipt 
-              sale={selectedSale}
               shopName={shop?.name || ''}
-              settings={shop?.printerSettings}
+              cashierName={selectedSale.cashierId || 'كاشير'}
+              items={selectedSale.items}
+              subtotal={selectedSale.subtotal}
+              discount={selectedSale.discount}
+              total={selectedSale.total}
+              vatAmount={selectedSale.vatAmount}
+              date={selectedSale.date}
+              printerSettings={shop?.printerSettings}
             />
           </div>
         )}

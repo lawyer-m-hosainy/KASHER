@@ -34,6 +34,7 @@ export interface AppUser {
   branchId?: string;
   role: 'owner' | 'cashier';
   email: string;
+  isAdmin?: boolean;
 }
 
 export interface Product {
@@ -87,4 +88,7 @@ export interface Sale {
   total: number;
   vatAmount?: number;
   createdAt: number;
+  invoiceNumber?: string;
+  id?: string;
+  date?: any;
 }

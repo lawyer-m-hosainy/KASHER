@@ -6,9 +6,10 @@ interface ProtectedRouteProps {
   children: ReactNode;
   allowedRoles?: ('owner' | 'cashier')[];
   requireActiveSubscription?: boolean;
+  requireAdmin?: boolean;
 }
 
-export const ProtectedRoute = ({ children, allowedRoles, requireActiveSubscription = true }: ProtectedRouteProps) => {
+export const ProtectedRoute = ({ children, allowedRoles, requireActiveSubscription = true, requireAdmin = false }: ProtectedRouteProps) => {
   const { user, appUser, shop, loading } = useAuth();
 
   if (loading) {
@@ -19,8 +20,12 @@ export const ProtectedRoute = ({ children, allowedRoles, requireActiveSubscripti
     return <Navigate to="/login" replace />;
   }
 
+  if (requireAdmin && !appUser.isAdmin) {
+    return <Navigate to="/pos" replace />;
+  }
+
   // Admin bypass
-  if (appUser.shopId === 'ADMIN') {
+  if (appUser.isAdmin) {
       return <>{children}</>;
   }
 

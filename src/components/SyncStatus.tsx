@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Wifi, WifiOff, RefreshCw } from 'lucide-react';
-import { getOfflineSales, deleteOfflineSale } from '../lib/offlineDb';
-import { addDoc, collection, updateDoc, doc, increment } from 'firebase/firestore';
+import { getOfflineSales, deleteOfflineSale, clearOfflineStockUpdate } from '../lib/offlineDb';
+import { addDoc, collection, updateDoc, doc, increment, runTransaction } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -76,11 +76,21 @@ export function SyncStatus() {
           }
         }
 
-        // Deduct Inventory in Firebase
+        // Deduct Inventory in Firebase with clamping
         for (const item of sale.items) {
-          await updateDoc(doc(db, 'products', item.productId), {
-            quantity: increment(-item.qty)
-          });
+          const productRef = doc(db, 'products', item.productId);
+          try {
+            await runTransaction(db, async (t) => {
+              const productSnap = await t.get(productRef);
+              if (productSnap.exists()) {
+                const newQty = Math.max(0, productSnap.data().quantity - item.qty);
+                t.update(productRef, { quantity: newQty });
+              }
+            });
+          } catch (err) {
+            console.error("Error updating inventory during sync", err);
+          }
+          await clearOfflineStockUpdate(item.productId);
         }
 
         // Remove from local DB

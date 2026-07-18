@@ -2,48 +2,63 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Function to check if user is logged in
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    // Match shops collection
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isUserShop(shopId) {
+      return isAuthenticated() && (getUserData().shopId == shopId || getUserData().shopId == 'ADMIN');
+    }
+
     match /shops/{shopId} {
-      allow read: if isAuthenticated();
-      // Only owner can update shop settings
-      allow write: if isAuthenticated() && 
-                   (request.resource.data.shopId == shopId || resource.data.shopId == shopId);
+      allow read: if isUserShop(shopId);
+      allow write: if isUserShop(shopId) || (request.resource.data.shopId == shopId);
     }
     
-    // Match users collection
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated(); // Simplified for MVP (real world: only self or shop owner)
+      allow read: if isAuthenticated() && (userId == request.auth.uid || isUserShop(resource.data.shopId));
+      allow write: if isAuthenticated() && userId == request.auth.uid;
     }
 
-    // Match products collection
     match /products/{productId} {
-      allow read: if isAuthenticated();
-      // Only shop owners/staff can modify products for their shop
-      allow write: if isAuthenticated(); 
+      allow read: if isUserShop(resource.data.shopId);
+      allow create: if isUserShop(request.resource.data.shopId) && 
+                       request.resource.data.price >= 0 && 
+                       request.resource.data.quantity >= 0 &&
+                       request.resource.data.keys().hasAll(['name', 'price', 'quantity', 'shopId']);
+      allow update: if isUserShop(resource.data.shopId) && 
+                       isUserShop(request.resource.data.shopId) && 
+                       request.resource.data.price >= 0 && 
+                       request.resource.data.quantity >= 0;
+      allow delete: if isUserShop(resource.data.shopId);
     }
 
-    // Match sales collection
     match /sales/{saleId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated(); 
+      allow read: if isUserShop(resource.data.shopId);
+      allow create: if isUserShop(request.resource.data.shopId) &&
+                       request.resource.data.keys().hasAll(['shopId', 'cashierId', 'items', 'total', 'createdAt']);
+      allow update, delete: if isUserShop(resource.data.shopId);
     }
 
-    // Match customers collection
     match /customers/{customerId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow read: if isUserShop(resource.data.shopId);
+      allow create: if isUserShop(request.resource.data.shopId) &&
+                       request.resource.data.keys().hasAll(['shopId', 'name', 'totalPurchases']);
+      allow update: if isUserShop(resource.data.shopId) && isUserShop(request.resource.data.shopId);
+      allow delete: if isUserShop(resource.data.shopId);
     }
     
-    // Match expenses collection
     match /expenses/{expenseId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow read: if isUserShop(resource.data.shopId);
+      allow create: if isUserShop(request.resource.data.shopId) &&
+                       request.resource.data.amount >= 0 &&
+                       request.resource.data.keys().hasAll(['shopId', 'amount', 'category', 'description', 'date', 'cashierId']);
+      allow update: if isUserShop(resource.data.shopId) && isUserShop(request.resource.data.shopId) && request.resource.data.amount >= 0;
+      allow delete: if isUserShop(resource.data.shopId);
     }
   }
 }
