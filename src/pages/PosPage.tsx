@@ -122,6 +122,17 @@ export default function PosPage() {
         await runTransaction(db, async (transaction) => {
           const counterRef = doc(db, 'counters', shop.shopId);
           const counterSnap = await transaction.get(counterRef);
+
+          const productSnaps = [];
+          for (const item of cart) {
+            const productRef = doc(db, 'products', item.productId);
+            const productSnap = await transaction.get(productRef);
+            if (!productSnap.exists() || productSnap.data().quantity - item.qty < 0) {
+              throw new Error(`insufficient_stock:${item.name}`);
+            }
+            productSnaps.push({ ref: productRef, item });
+          }
+
           let newSeq = 1;
           if (counterSnap.exists()) {
              newSeq = (counterSnap.data().lastInvoiceNumber || 0) + 1;
@@ -160,9 +171,8 @@ export default function PosPage() {
             });
           }
 
-          for (const item of cart) {
-            const productRef = doc(db, 'products', item.productId);
-            transaction.update(productRef, {
+          for (const { ref, item } of productSnaps) {
+            transaction.update(ref, {
               quantity: increment(-item.qty)
             });
           }
@@ -239,9 +249,14 @@ export default function PosPage() {
       }, 300);
 
       setTimeout(() => setCheckoutSuccess(false), 5000);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error('حدث خطأ أثناء إتمام البيع');
+      if (error.message && error.message.startsWith('insufficient_stock:')) {
+        const productName = error.message.split(':')[1];
+        toast.error(`الكمية المتاحة لا تكفي لـ ${productName}`);
+      } else {
+        toast.error('حدث خطأ أثناء إتمام البيع');
+      }
     } finally {
       setLoading(false);
     }

@@ -16,12 +16,15 @@ service cloud.firestore {
 
     match /shops/{shopId} {
       allow read: if isUserShop(shopId);
-      allow write: if isUserShop(shopId) || (request.resource.data.shopId == shopId);
+      allow create: if request.auth != null && shopId == request.auth.uid && request.resource.data.shopId == shopId;
+      allow update: if isUserShop(shopId);
     }
     
     match /users/{userId} {
       allow read: if isAuthenticated() && (userId == request.auth.uid || isUserShop(resource.data.shopId));
-      allow write: if isAuthenticated() && userId == request.auth.uid;
+      // Net effect: isAdmin can NEVER be set or changed by any client write, ever. shopId/role can never change after creation via client.
+      allow create: if request.auth != null && (userId == request.auth.uid || (getUserData().role == 'owner' && request.resource.data.shopId == getUserData().shopId && request.resource.data.role == 'cashier')) && request.resource.data.isAdmin != true;
+      allow update: if request.auth != null && userId == request.auth.uid && request.resource.data.shopId == resource.data.shopId && request.resource.data.role == resource.data.role && request.resource.data.isAdmin == resource.data.isAdmin;
     }
 
     match /products/{productId} {

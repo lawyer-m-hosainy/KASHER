@@ -52,34 +52,32 @@ export function SyncStatus() {
     try {
       const sales = await getOfflineSales();
       for (const sale of sales) {
-        // Push to Firebase
-        await addDoc(collection(db, 'sales'), {
-          shopId: sale.shopId,
-          branchId: sale.branchId || null,
-          cashierId: sale.cashierId,
-          customerId: sale.customerId || null,
-          items: sale.items,
-          subtotal: sale.subtotal || sale.total,
-          discount: sale.discount || 0,
-          total: sale.total,
-          createdAt: sale.createdAt
-        });
+        try {
+          // Push to Firebase
+          await addDoc(collection(db, 'sales'), {
+            shopId: sale.shopId,
+            branchId: sale.branchId || null,
+            cashierId: sale.cashierId,
+            customerId: sale.customerId || null,
+            invoiceNumber: sale.invoiceNumber || null,
+            vatAmount: sale.vatAmount || 0,
+            items: sale.items,
+            subtotal: sale.subtotal || sale.total,
+            discount: sale.discount || 0,
+            total: sale.total,
+            createdAt: sale.createdAt
+          });
 
-        // Update Customer purchases
-        if (sale.customerId) {
-          try {
+          // Update Customer purchases
+          if (sale.customerId) {
             await updateDoc(doc(db, 'customers', sale.customerId), {
               totalPurchases: increment(sale.total)
             });
-          } catch (err) {
-            console.error("Error updating customer during sync", err);
           }
-        }
 
-        // Deduct Inventory in Firebase with clamping
-        for (const item of sale.items) {
-          const productRef = doc(db, 'products', item.productId);
-          try {
+          // Deduct Inventory in Firebase with clamping
+          for (const item of sale.items) {
+            const productRef = doc(db, 'products', item.productId);
             await runTransaction(db, async (t) => {
               const productSnap = await t.get(productRef);
               if (productSnap.exists()) {
@@ -87,14 +85,16 @@ export function SyncStatus() {
                 t.update(productRef, { quantity: newQty });
               }
             });
-          } catch (err) {
-            console.error("Error updating inventory during sync", err);
           }
-          await clearOfflineStockUpdate(item.productId);
-        }
 
-        // Remove from local DB
-        await deleteOfflineSale(sale.id);
+          // On full success, clear local state
+          for (const item of sale.items) {
+            await clearOfflineStockUpdate(item.productId);
+          }
+          await deleteOfflineSale(sale.id);
+        } catch (err) {
+          console.error("Error syncing sale", sale.id, err);
+        }
       }
       checkPending();
     } catch (error) {

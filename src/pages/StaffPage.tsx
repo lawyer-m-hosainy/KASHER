@@ -53,7 +53,8 @@ export default function StaffPage() {
         shopId: shop.shopId,
         branchId: selectedBranchId || undefined,
         role: 'cashier',
-        email
+        email,
+        isAdmin: false
       });
       
       // Clean up the secondary auth

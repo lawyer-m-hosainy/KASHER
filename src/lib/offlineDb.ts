@@ -7,6 +7,8 @@ export interface OfflineSale {
   branchId?: string;
   cashierId: string;
   customerId?: string;
+  invoiceNumber?: string;
+  vatAmount?: number;
   items: SaleItem[];
   subtotal: number;
   discount: number;
