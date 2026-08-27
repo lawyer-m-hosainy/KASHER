@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, collection, query, where, limit, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Printer, Save, Building2, Plus, Trash2, Tags } from 'lucide-react';
 import { PrinterSettings, Branch } from '../types';
@@ -61,12 +61,39 @@ export default function SettingsPage() {
     setNewBranchName('');
   };
 
-  const handleRemoveBranch = (id: string) => {
+  const [checkingBranchId, setCheckingBranchId] = useState<string | null>(null);
+
+  const branchHasData = async (branchId: string) => {
+    if (!shop) return false;
+    const collections = ['products', 'sales', 'expenses', 'users'];
+    const checks = await Promise.all(
+      collections.map(name => getDocs(query(
+        collection(db, name),
+        where('shopId', '==', shop.shopId),
+        where('branchId', '==', branchId),
+        limit(1)
+      )))
+    );
+    return checks.some(snap => !snap.empty);
+  };
+
+  const handleRemoveBranch = async (id: string) => {
     if (branches.length === 1) {
       toast.error('يجب أن يحتوي المتجر على فرع واحد على الأقل');
       return;
     }
-    setBranches(branches.filter(b => b.id !== id));
+    setCheckingBranchId(id);
+    try {
+      if (await branchHasData(id)) {
+        toast.error('لا يمكن حذف هذا الفرع لوجود بيانات مرتبطة به (منتجات، مبيعات، مصروفات، أو موظفين). انقل البيانات أو الموظفين أولاً.');
+        return;
+      }
+      setBranches(branches.filter(b => b.id !== id));
+    } catch (error) {
+      toast.error('تعذر التحقق من بيانات الفرع، حاول مرة أخرى');
+    } finally {
+      setCheckingBranchId(null);
+    }
   };
 
   const handleAddCategory = () => {
@@ -220,9 +247,10 @@ export default function SettingsPage() {
             {branches.map(branch => (
               <div key={branch.id} className="flex items-center justify-between p-4 bg-white border border-slate-200 rounded-xl">
                 <span className="font-bold text-slate-700">{branch.name}</span>
-                <button 
+                <button
                   onClick={() => handleRemoveBranch(branch.id)}
-                  className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                  disabled={checkingBranchId === branch.id}
+                  className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
                   title="حذف الفرع"
                 >
                   <Trash2 size={20} />
