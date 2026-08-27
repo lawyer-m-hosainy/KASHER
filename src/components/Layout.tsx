@@ -1,6 +1,6 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Store, Package, BarChart3, LogOut, Loader2, Users, Settings, Building2, Wallet, ReceiptText } from 'lucide-react';
+import { Store, Package, BarChart3, LogOut, Loader2, Users, Settings, Building2, Wallet, ReceiptText, DatabaseBackup } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { Notifications } from './Notifications';
 import { SyncStatus } from './SyncStatus';
@@ -27,6 +27,7 @@ export default function Layout() {
     { path: '/inventory', icon: <Package size={24} />, label: 'المخزون', roles: ['owner'] },
     { path: '/reports', icon: <BarChart3 size={24} />, label: 'التقارير', roles: ['owner'] },
     { path: '/staff', icon: <Users size={24} />, label: 'الموظفين', roles: ['owner'] },
+    { path: '/backup', icon: <DatabaseBackup size={24} />, label: 'النسخ الاحتياطي', roles: ['owner'] },
     { path: '/settings', icon: <Settings size={24} />, label: 'الإعدادات', roles: ['owner'] },
   ];
 
