@@ -63,5 +63,24 @@ service cloud.firestore {
       allow update: if isUserShop(resource.data.shopId) && isUserShop(request.resource.data.shopId) && request.resource.data.amount >= 0;
       allow delete: if isUserShop(resource.data.shopId);
     }
+
+    // Returns/refunds logged against a sale (see SalesHistoryPage). Branch-scoped
+    // like the sale they reference; never updated or deleted once created.
+    match /returns/{returnId} {
+      allow read: if isUserShop(resource.data.shopId);
+      allow create: if isUserShop(request.resource.data.shopId) &&
+                       request.resource.data.total >= 0 &&
+                       request.resource.data.keys().hasAll(['shopId', 'saleId', 'items', 'total', 'refundMethod', 'cashierId']);
+    }
+
+    // Payments collected against a customer's outstanding balance (see
+    // Customer.balance / CustomersPage). Shop-wide like customers themselves;
+    // never updated or deleted once created.
+    match /payments/{paymentId} {
+      allow read: if isUserShop(resource.data.shopId);
+      allow create: if isUserShop(request.resource.data.shopId) &&
+                       request.resource.data.amount >= 0 &&
+                       request.resource.data.keys().hasAll(['shopId', 'customerId', 'amount', 'cashierId']);
+    }
   }
 }

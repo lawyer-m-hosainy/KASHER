@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { Sale, AppUser, Expense, Product } from '../types';
+import { Sale, AppUser, Expense, Product, SaleReturn } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { format, subDays, startOfDay, endOfDay } from 'date-fns';
 import { ar } from 'date-fns/locale';
@@ -11,6 +11,7 @@ import { TrendingUp, DollarSign, ShoppingBag, ArrowUpRight, ReceiptText, BarChar
 export default function ReportsPage() {
   const { shop, currentBranchId } = useAuth();
   const [sales, setSales] = useState<Sale[]>([]);
+  const [returns, setReturns] = useState<SaleReturn[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [users, setUsers] = useState<AppUser[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -61,16 +62,22 @@ export default function ReportsPage() {
   const totalRevenue = sales.reduce((sum, sale) => sum + sale.total, 0);
   const totalDiscounts = sales.reduce((sum, sale) => sum + (sale.discount || 0), 0);
   const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
-  
+  const totalReturns = returns.reduce((sum, ret) => sum + ret.total, 0);
+
+  const costOf = (productId: string) => products.find(p => p.productId === productId)?.costPrice || 0;
+
   const totalCogs = sales.reduce((sum, sale) => {
-    return sum + sale.items.reduce((itemSum, item) => {
-      const product = products.find(p => p.productId === item.productId);
-      const cost = product?.costPrice || 0;
-      return itemSum + (cost * item.qty);
-    }, 0);
+    return sum + sale.items.reduce((itemSum, item) => itemSum + costOf(item.productId) * item.qty, 0);
   }, 0);
 
-  const netProfit = totalRevenue - totalCogs - totalExpenses;
+  // Returned items go back into stock, so their cost is no longer "sold" —
+  // credit it back when computing net profit.
+  const returnedCogs = returns.reduce((sum, ret) => {
+    return sum + ret.items.reduce((itemSum, item) => itemSum + costOf(item.productId) * item.qty, 0);
+  }, 0);
+
+  const netRevenue = totalRevenue - totalReturns;
+  const netProfit = netRevenue - (totalCogs - returnedCogs) - totalExpenses;
   
   // Last 7 days data for chart
   const last7Days = Array.from({ length: 7 }).map((_, i) => {
@@ -196,6 +203,10 @@ export default function ReportsPage() {
           <div className="flex-1 text-center border-b md:border-b-0 md:border-l border-slate-100 pb-4 md:pb-0 md:pl-4">
             <span className="text-slate-500 text-sm font-medium">إجمالي المصروفات</span>
             <div className="text-3xl font-black text-rose-500 mt-1">{totalExpenses.toFixed(2)} <span className="text-sm text-rose-300 font-normal">ج.م</span></div>
+          </div>
+          <div className="flex-1 text-center border-b md:border-b-0 md:border-l border-slate-100 pb-4 md:pb-0 md:pl-4">
+            <span className="text-slate-500 text-sm font-medium">إجمالي المرتجعات</span>
+            <div className="text-3xl font-black text-orange-500 mt-1">{totalReturns.toFixed(2)} <span className="text-sm text-orange-300 font-normal">ج.م</span></div>
           </div>
           <div className="flex-1 text-center">
             <span className="text-slate-500 text-sm font-medium">صافي الربح</span>
