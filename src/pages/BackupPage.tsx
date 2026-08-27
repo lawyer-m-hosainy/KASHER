@@ -68,7 +68,7 @@ export default function BackupPage() {
 
       <div className="flex items-start gap-3 bg-amber-50 border border-amber-100 text-amber-800 rounded-2xl p-4 max-w-2xl text-sm">
         <ShieldCheck className="shrink-0 mt-0.5" size={20} />
-        <p>يشمل التصدير بيانات كل الفروع (المنتجات، المبيعات، المصروفات، العملاء) لأن هذه الصفحة متاحة للمالك فقط.</p>
+        <p>يشمل التصدير بيانات كل الفروع (المنتجات، المبيعات، المصروفات، العملاء، المرتجعات، دفعات العملاء) لأن هذه الصفحة متاحة للمالك فقط.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl">
@@ -93,7 +93,7 @@ export default function BackupPage() {
             <FileSpreadsheet className="text-emerald-600" /> تقرير شامل (Excel)
           </div>
           <p className="text-slate-500 text-sm flex-1">
-            ملف Excel بعدة صفحات (المخزون، المبيعات، المصروفات، العملاء) مناسب للمراجعة أو تسليمه للمحاسب.
+            ملف Excel بعدة صفحات (المخزون، المبيعات، المصروفات، العملاء، المرتجعات، دفعات العملاء) مناسب للمراجعة أو تسليمه للمحاسب.
           </p>
           <button
             onClick={handleExportExcel}
