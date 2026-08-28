@@ -14,39 +14,60 @@ service cloud.firestore {
       return isAuthenticated() && (getUserData().shopId == shopId || getUserData().shopId == 'ADMIN');
     }
 
+    // Branch-level access: platform admins and shop owners see every branch;
+    // a cashier only reaches documents tagged with their own branchId.
+    // A document with no branchId (legacy data, or a shop with a single
+    // implicit branch) is treated as owner-only, matching InventoryPage /
+    // PosPage which always write a branchId for real branch-scoped writes.
+    function isUserBranch(shopId, branchId) {
+      return isUserShop(shopId) && (
+        getUserData().shopId == 'ADMIN' ||
+        getUserData().role == 'owner' ||
+        getUserData().branchId == branchId
+      );
+    }
+
     match /shops/{shopId} {
       allow read: if isUserShop(shopId);
       allow create: if request.auth != null && shopId == request.auth.uid && request.resource.data.shopId == shopId;
       allow update: if isUserShop(shopId);
     }
-    
+
     match /users/{userId} {
       allow read: if isAuthenticated() && (userId == request.auth.uid || isUserShop(resource.data.shopId));
       // Net effect: isAdmin can NEVER be set or changed by any client write, ever. shopId/role can never change after creation via client.
       allow create: if request.auth != null && (userId == request.auth.uid || (getUserData().role == 'owner' && request.resource.data.shopId == getUserData().shopId && request.resource.data.role == 'cashier')) && request.resource.data.isAdmin != true;
-      allow update: if request.auth != null && userId == request.auth.uid && request.resource.data.shopId == resource.data.shopId && request.resource.data.role == resource.data.role && request.resource.data.isAdmin == resource.data.isAdmin;
+      // A user may update their own doc but never reassign their own branch (only an owner can move staff between branches).
+      // An owner may update any staff doc in their own shop, including branchId, but never shopId/role/isAdmin.
+      allow update: if request.auth != null && request.resource.data.shopId == resource.data.shopId && request.resource.data.role == resource.data.role && request.resource.data.isAdmin == resource.data.isAdmin && (
+        (userId == request.auth.uid && request.resource.data.branchId == resource.data.branchId) ||
+        (getUserData().role == 'owner' && getUserData().shopId == resource.data.shopId)
+      );
     }
 
     match /products/{productId} {
-      allow read: if isUserShop(resource.data.shopId);
-      allow create: if isUserShop(request.resource.data.shopId) && 
-                       request.resource.data.price >= 0 && 
+      allow read: if isUserBranch(resource.data.shopId, resource.data.get('branchId', null));
+      allow create: if isUserBranch(request.resource.data.shopId, request.resource.data.get('branchId', null)) &&
+                       request.resource.data.price >= 0 &&
                        request.resource.data.quantity >= 0 &&
                        request.resource.data.keys().hasAll(['name', 'price', 'quantity', 'shopId']);
-      allow update: if isUserShop(resource.data.shopId) && 
-                       isUserShop(request.resource.data.shopId) && 
-                       request.resource.data.price >= 0 && 
+      allow update: if isUserBranch(resource.data.shopId, resource.data.get('branchId', null)) &&
+                       isUserBranch(request.resource.data.shopId, request.resource.data.get('branchId', null)) &&
+                       request.resource.data.price >= 0 &&
                        request.resource.data.quantity >= 0;
-      allow delete: if isUserShop(resource.data.shopId);
+      allow delete: if isUserBranch(resource.data.shopId, resource.data.get('branchId', null));
     }
 
     match /sales/{saleId} {
-      allow read: if isUserShop(resource.data.shopId);
-      allow create: if isUserShop(request.resource.data.shopId) &&
+      allow read: if isUserBranch(resource.data.shopId, resource.data.get('branchId', null));
+      allow create: if isUserBranch(request.resource.data.shopId, request.resource.data.get('branchId', null)) &&
                        request.resource.data.keys().hasAll(['shopId', 'cashierId', 'items', 'total', 'createdAt']);
-      allow update, delete: if isUserShop(resource.data.shopId);
+      allow update, delete: if isUserBranch(resource.data.shopId, resource.data.get('branchId', null));
     }
 
+    // Customers are shared across all of a shop's branches by design (a
+    // customer can buy from any branch), so these stay shop-scoped, not
+    // branch-scoped.
     match /customers/{customerId} {
       allow read: if isUserShop(resource.data.shopId);
       allow create: if isUserShop(request.resource.data.shopId) &&
@@ -54,14 +75,20 @@ service cloud.firestore {
       allow update: if isUserShop(resource.data.shopId) && isUserShop(request.resource.data.shopId);
       allow delete: if isUserShop(resource.data.shopId);
     }
-    
+
     match /expenses/{expenseId} {
-      allow read: if isUserShop(resource.data.shopId);
-      allow create: if isUserShop(request.resource.data.shopId) &&
+      allow read: if isUserBranch(resource.data.shopId, resource.data.get('branchId', null));
+      allow create: if isUserBranch(request.resource.data.shopId, request.resource.data.get('branchId', null)) &&
                        request.resource.data.amount >= 0 &&
                        request.resource.data.keys().hasAll(['shopId', 'amount', 'category', 'description', 'date', 'cashierId']);
-      allow update: if isUserShop(resource.data.shopId) && isUserShop(request.resource.data.shopId) && request.resource.data.amount >= 0;
-      allow delete: if isUserShop(resource.data.shopId);
+      allow update: if isUserBranch(resource.data.shopId, resource.data.get('branchId', null)) && isUserBranch(request.resource.data.shopId, request.resource.data.get('branchId', null)) && request.resource.data.amount >= 0;
+      allow delete: if isUserBranch(resource.data.shopId, resource.data.get('branchId', null));
+    }
+
+    // Per-shop invoice number sequence (see PosPage checkout transaction).
+    // Shared across branches, same as the shop-wide counter document itself.
+    match /counters/{shopId} {
+      allow read, write: if isUserShop(shopId);
     }
   }
 }

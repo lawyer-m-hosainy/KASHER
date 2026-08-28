@@ -20,6 +20,7 @@ import CustomersPage from './pages/CustomersPage';
 import ExpensesPage from './pages/ExpensesPage';
 import AdminDashboard from './pages/AdminDashboard';
 import SalesHistoryPage from './pages/SalesHistoryPage';
+import BackupPage from './pages/BackupPage';
 import { Toaster } from 'sonner';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -70,6 +71,11 @@ export default function App() {
             <Route path="/settings" element={
               <ProtectedRoute allowedRoles={['owner']}>
                 <SettingsPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/backup" element={
+              <ProtectedRoute allowedRoles={['owner']}>
+                <BackupPage />
               </ProtectedRoute>
             } />
             <Route path="/customers" element={
