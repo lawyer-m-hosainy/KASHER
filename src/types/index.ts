@@ -58,6 +58,49 @@ export interface Customer {
   name: string;
   phone?: string;
   totalPurchases: number;
+  // Outstanding amount the customer owes from credit sales, net of payments
+  // and credit refunds. Maintained via Firestore increment() at the point
+  // of each sale/payment/return rather than recomputed from history.
+  balance?: number;
+}
+
+// A payment collected against a customer's outstanding balance (see Customer.balance).
+export interface Payment {
+  id: string;
+  shopId: string;
+  branchId?: string;
+  customerId: string;
+  amount: number;
+  method?: string;
+  note?: string;
+  cashierId: string;
+  cashierName?: string;
+  createdAt: number;
+}
+
+export interface ReturnItem {
+  productId: string;
+  name: string;
+  price: number;
+  qty: number;
+}
+
+// A return/refund logged against an original sale. Kept as its own record
+// (rather than mutating the sale) so multiple partial returns against the
+// same sale can be tracked and capped.
+export interface SaleReturn {
+  id: string;
+  shopId: string;
+  branchId?: string;
+  saleId: string;
+  saleInvoiceNumber?: string;
+  customerId?: string;
+  items: ReturnItem[];
+  total: number;
+  refundMethod: 'cash' | 'credit';
+  cashierId: string;
+  cashierName?: string;
+  createdAt: number;
 }
 
 export interface Expense {
@@ -90,6 +133,11 @@ export interface Sale {
   discount: number;
   total: number;
   vatAmount?: number;
+  // Amount collected at checkout and the remainder left on the customer's
+  // account (see Customer.balance). Absent on sales created before credit
+  // sales existed, which are always treated as fully paid.
+  paid?: number;
+  due?: number;
   createdAt: number;
   invoiceNumber?: string;
   id?: string;

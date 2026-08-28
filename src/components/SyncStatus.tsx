@@ -66,13 +66,16 @@ export function SyncStatus() {
             subtotal: sale.subtotal || sale.total,
             discount: sale.discount || 0,
             total: sale.total,
+            paid: sale.paid ?? sale.total,
+            due: sale.due ?? 0,
             createdAt: sale.createdAt
           });
 
-          // Update Customer purchases
+          // Update Customer purchases (and outstanding balance for credit sales)
           if (sale.customerId) {
             await updateDoc(doc(db, 'customers', sale.customerId), {
-              totalPurchases: increment(sale.total)
+              totalPurchases: increment(sale.total),
+              ...(sale.due ? { balance: increment(sale.due) } : {})
             });
           }
 

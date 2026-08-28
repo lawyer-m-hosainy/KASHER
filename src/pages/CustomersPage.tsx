@@ -1,24 +1,28 @@
 import { useState, useEffect, FormEvent } from 'react';
-import { collection, query, where, getDocs, addDoc, updateDoc, doc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, updateDoc, doc, deleteDoc, runTransaction, increment } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Customer } from '../types';
-import { Users, UserPlus, Search, Edit2, Trash2 } from 'lucide-react';
+import { Users, UserPlus, Search, Edit2, Trash2, Wallet } from 'lucide-react';
 import { TableSkeleton } from '../components/Skeleton';
 import { toast } from 'sonner';
 import { ConfirmModal } from '../components/ConfirmModal';
 
 export default function CustomersPage() {
-  const { shop } = useAuth();
+  const { shop, appUser, currentBranchId } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [confirmState, setConfirmState] = useState({ isOpen: false, id: '' });
-  
+
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  const [payingCustomer, setPayingCustomer] = useState<Customer | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [submittingPayment, setSubmittingPayment] = useState(false);
 
   const fetchCustomers = async () => {
     if (!shop) return;
@@ -86,7 +90,42 @@ export default function CustomersPage() {
     }
   };
 
-  const filtered = customers.filter(c => 
+  const handleRecordPayment = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!payingCustomer || !shop || !appUser) return;
+    const amount = Number(paymentAmount);
+    if (!(amount > 0)) return;
+
+    setSubmittingPayment(true);
+    try {
+      await runTransaction(db, async (transaction) => {
+        const customerRef = doc(db, 'customers', payingCustomer.id);
+        transaction.update(customerRef, { balance: increment(-amount) });
+
+        const paymentRef = doc(collection(db, 'payments'));
+        transaction.set(paymentRef, {
+          shopId: shop.shopId,
+          branchId: currentBranchId || null,
+          customerId: payingCustomer.id,
+          amount,
+          cashierId: appUser.userId,
+          cashierName: appUser.email,
+          createdAt: Date.now()
+        });
+      });
+      toast.success('تم تسجيل الدفعة بنجاح');
+      setPayingCustomer(null);
+      setPaymentAmount('');
+      fetchCustomers();
+    } catch (error) {
+      console.error(error);
+      toast.error('حدث خطأ أثناء تسجيل الدفعة');
+    } finally {
+      setSubmittingPayment(false);
+    }
+  };
+
+  const filtered = customers.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase()) || 
     (c.phone && c.phone.includes(search))
   );
@@ -146,22 +185,39 @@ export default function CustomersPage() {
               <th className="p-4 border-b border-slate-100">اسم العميل</th>
               <th className="p-4 border-b border-slate-100">رقم الهاتف</th>
               <th className="p-4 border-b border-slate-100">إجمالي المشتريات</th>
+              <th className="p-4 border-b border-slate-100">الرصيد (آجل)</th>
               <th className="p-4 border-b border-slate-100 text-left">إجراءات</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={4} className="p-0"><TableSkeleton rows={4} cols={4} /></td></tr>
+              <tr><td colSpan={5} className="p-0"><TableSkeleton rows={4} cols={5} /></td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={4} className="p-8 text-center text-slate-500 font-medium">لا يوجد عملاء.</td></tr>
+              <tr><td colSpan={5} className="p-8 text-center text-slate-500 font-medium">لا يوجد عملاء.</td></tr>
             ) : (
               filtered.map(c => (
                 <tr key={c.id} className="hover:bg-slate-50 transition-colors">
                   <td className="p-4 font-bold text-slate-800">{c.name}</td>
                   <td className="p-4 text-slate-600">{c.phone || '-'}</td>
                   <td className="p-4 font-bold text-blue-600">{c.totalPurchases || 0} ج.م</td>
+                  <td className="p-4 font-bold">
+                    {(c.balance || 0) > 0 ? (
+                      <span className="text-amber-600">{(c.balance || 0).toFixed(2)} ج.م</span>
+                    ) : (
+                      <span className="text-slate-400">-</span>
+                    )}
+                  </td>
                   <td className="p-4">
                     <div className="flex items-center gap-2 justify-end">
+                      {(c.balance || 0) > 0 && (
+                        <button
+                          onClick={() => { setPayingCustomer(c); setPaymentAmount(''); }}
+                          className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                          title="تسجيل دفعة"
+                        >
+                          <Wallet size={18} />
+                        </button>
+                      )}
                       <button onClick={() => editCustomer(c)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"><Edit2 size={18} /></button>
                       <button onClick={() => deleteCustomer(c.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18} /></button>
                     </div>
@@ -180,6 +236,33 @@ export default function CustomersPage() {
         onConfirm={executeDelete}
         onCancel={() => setConfirmState({ isOpen: false, id: '' })}
       />
+
+      {payingCustomer && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" dir="rtl">
+          <form onSubmit={handleRecordPayment} className="bg-white rounded-3xl shadow-xl w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-200">
+            <h3 className="text-xl font-bold text-slate-900 mb-1">تسجيل دفعة من {payingCustomer.name}</h3>
+            <p className="text-slate-500 mb-4">الرصيد الحالي: {(payingCustomer.balance || 0).toFixed(2)} ج.م</p>
+            <label className="block text-sm font-medium text-slate-700 mb-1">المبلغ المدفوع</label>
+            <input
+              required
+              autoFocus
+              type="number"
+              min="0.01"
+              step="0.01"
+              max={payingCustomer.balance || undefined}
+              value={paymentAmount}
+              onChange={e => setPaymentAmount(e.target.value)}
+              className="w-full p-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <div className="flex gap-3 mt-6">
+              <button type="button" onClick={() => setPayingCustomer(null)} className="flex-1 px-5 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">إلغاء</button>
+              <button type="submit" disabled={submittingPayment} className="flex-1 px-5 py-3 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 transition-colors">
+                {submittingPayment ? 'جاري الحفظ...' : 'تسجيل الدفعة'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { collection, query, where, getDocs, addDoc, updateDoc, doc, setDoc, runT
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Product, SaleItem, Customer } from '../types';
-import { Search, Plus, Minus, Trash2, ReceiptText, CheckCircle2, Printer, ScanLine, UserSquare2, Percent } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, ReceiptText, CheckCircle2, Printer, ScanLine, UserSquare2, Percent, Wallet } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import { PrintableReceipt } from '../components/PrintableReceipt';
 import { BarcodeScanner } from '../components/BarcodeScanner';
@@ -18,12 +18,15 @@ export default function PosPage() {
   const [cart, setCart] = useState<SaleItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
-  const [lastSale, setLastSale] = useState<{items: SaleItem[], subtotal?: number, discount?: number, total: number, vatAmount?: number, date: Date, customerId?: string} | null>(null);
+  const [lastSale, setLastSale] = useState<{items: SaleItem[], subtotal?: number, discount?: number, total: number, vatAmount?: number, paid?: number, due?: number, date: Date, customerId?: string} | null>(null);
   const [showScanner, setShowScanner] = useState(false);
   const [alertState, setAlertState] = useState({ isOpen: false, message: '' });
-  
+
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [discountPercent, setDiscountPercent] = useState<number>(0);
+  // Amount left owed by the customer on this sale (credit sale). Only usable
+  // when a customer is selected — a walk-in cash sale is always paid in full.
+  const [dueAmount, setDueAmount] = useState<number>(0);
 
   const receiptRef = useRef<HTMLDivElement>(null);
   
@@ -128,6 +131,8 @@ export default function PosPage() {
       const now = Date.now();
       const newSaleId = `sale-${now}`;
       let finalInvoiceNumber = '';
+      const due = selectedCustomerId ? Math.max(0, Math.min(dueAmount, total)) : 0;
+      const paid = Number((total - due).toFixed(2));
 
       if (navigator.onLine) {
         await runTransaction(db, async (transaction) => {
@@ -167,6 +172,8 @@ export default function PosPage() {
             discount: discountAmount,
             total,
             vatAmount,
+            paid,
+            due,
             createdAt: now,
             cashierId: appUser.userId,
             cashierName: appUser.email,
@@ -179,7 +186,8 @@ export default function PosPage() {
           if (selectedCustomerId) {
             const customerRef = doc(db, 'customers', selectedCustomerId);
             transaction.update(customerRef, {
-              totalPurchases: increment(total)
+              totalPurchases: increment(total),
+              ...(due > 0 ? { balance: increment(due) } : {})
             });
           }
 
@@ -221,6 +229,8 @@ export default function PosPage() {
           discount: discountAmount,
           total,
           vatAmount,
+          paid,
+          due,
           createdAt: now,
           cashierId: appUser.userId,
           cashierName: appUser.email,
@@ -242,18 +252,21 @@ export default function PosPage() {
         }
       }
 
-      setLastSale({ 
-        items: [...cart], 
-        subtotal, 
-        discount: discountAmount, 
-        total, 
+      setLastSale({
+        items: [...cart],
+        subtotal,
+        discount: discountAmount,
+        total,
         vatAmount,
+        paid,
+        due,
         date: new Date(now),
         customerId: selectedCustomerId
       });
       setCart([]);
       setSelectedCustomerId('');
       setDiscountPercent(0);
+      setDueAmount(0);
       setCheckoutSuccess(true);
       toast.success('تمت عملية البيع بنجاح!');
       
@@ -354,6 +367,8 @@ export default function PosPage() {
             subtotal={lastSale.subtotal}
             discount={lastSale.discount}
             total={lastSale.total}
+            paid={lastSale.paid}
+            due={lastSale.due}
             date={lastSale.date}
             printerSettings={shop.printerSettings}
           />
@@ -471,9 +486,12 @@ export default function PosPage() {
           <div className="space-y-4 mb-6">
             <div className="flex items-center gap-3">
               <UserSquare2 className="text-slate-400" size={20} />
-              <select 
-                value={selectedCustomerId} 
-                onChange={(e) => setSelectedCustomerId(e.target.value)}
+              <select
+                value={selectedCustomerId}
+                onChange={(e) => {
+                  setSelectedCustomerId(e.target.value);
+                  if (!e.target.value) setDueAmount(0);
+                }}
                 className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">عميل نقدي (بدون اسم)</option>
@@ -482,12 +500,12 @@ export default function PosPage() {
                 ))}
               </select>
             </div>
-            
+
             <div className="flex items-center gap-3">
               <Percent className="text-slate-400" size={20} />
               <div className="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-blue-500">
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   min="0"
                   max="100"
                   placeholder="نسبة الخصم %"
@@ -498,6 +516,24 @@ export default function PosPage() {
                 <span className="px-3 text-slate-400 border-r border-slate-200 bg-slate-100">%</span>
               </div>
             </div>
+
+            {selectedCustomerId && (
+              <div className="flex items-center gap-3">
+                <Wallet className="text-slate-400" size={20} />
+                <div className="flex-1 flex items-center bg-amber-50 border border-amber-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-amber-500">
+                  <input
+                    type="number"
+                    min="0"
+                    max={total}
+                    placeholder="مبلغ آجل على العميل (اختياري)"
+                    value={dueAmount || ''}
+                    onChange={(e) => setDueAmount(Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-transparent outline-none"
+                  />
+                  <span className="px-3 text-amber-500 border-r border-amber-200 bg-amber-100 text-xs whitespace-nowrap">ج.م آجل</span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-between items-center mb-2">

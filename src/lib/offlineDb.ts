@@ -14,6 +14,8 @@ export interface OfflineSale {
   subtotal: number;
   discount: number;
   total: number;
+  paid?: number;
+  due?: number;
   createdAt: number;
 }
 

@@ -1,12 +1,14 @@
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from './firebase';
-import { Product, Sale, Expense, Customer, Shop } from '../types';
+import { Product, Sale, Expense, Customer, Shop, SaleReturn, Payment } from '../types';
 
 export interface ShopBackupData {
   products: Product[];
   sales: Sale[];
   expenses: Expense[];
   customers: Customer[];
+  returns: SaleReturn[];
+  payments: Payment[];
 }
 
 async function fetchCollection<T>(name: string, shopId: string): Promise<T[]> {
@@ -17,13 +19,15 @@ async function fetchCollection<T>(name: string, shopId: string): Promise<T[]> {
 // Full snapshot of everything belonging to a shop, across all of its branches.
 // Backup/export is an owner-only feature, so branch filtering does not apply here.
 export async function fetchShopBackupData(shopId: string): Promise<ShopBackupData> {
-  const [products, sales, expenses, customers] = await Promise.all([
+  const [products, sales, expenses, customers, returns, payments] = await Promise.all([
     fetchCollection<Product>('products', shopId),
     fetchCollection<Sale>('sales', shopId),
     fetchCollection<Expense>('expenses', shopId),
     fetchCollection<Customer>('customers', shopId),
+    fetchCollection<SaleReturn>('returns', shopId),
+    fetchCollection<Payment>('payments', shopId),
   ]);
-  return { products, sales, expenses, customers };
+  return { products, sales, expenses, customers, returns, payments };
 }
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -101,6 +105,8 @@ export async function exportBackupExcel(shop: Shop, data: ShopBackupData): Promi
       'الخصم': s.discount,
       'الضريبة': s.vatAmount || 0,
       'الصافي': s.total,
+      'المدفوع': s.paid ?? s.total,
+      'الآجل': s.due || 0,
     }));
   XLSX.utils.book_append_sheet(wb, sheetOrEmpty(saleRows, 'لا توجد مبيعات'), 'المبيعات');
 
@@ -117,8 +123,37 @@ export async function exportBackupExcel(shop: Shop, data: ShopBackupData): Promi
     'الاسم': c.name,
     'الهاتف': c.phone || '',
     'إجمالي المشتريات': c.totalPurchases,
+    'الرصيد (آجل)': c.balance || 0,
   }));
   XLSX.utils.book_append_sheet(wb, sheetOrEmpty(customerRows, 'لا يوجد عملاء'), 'العملاء');
+
+  const returnRows = [...data.returns]
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .map(r => ({
+      'فاتورة الأصل': r.saleInvoiceNumber || r.saleId,
+      'التاريخ': r.createdAt ? new Date(r.createdAt).toLocaleString('ar-EG') : '',
+      'الفرع': branchName(shop, r.branchId),
+      'طريقة الاسترداد': r.refundMethod === 'credit' ? 'خصم من رصيد العميل' : 'نقدي',
+      'عدد العناصر': r.items.reduce((sum, item) => sum + item.qty, 0),
+      'الإجمالي': r.total,
+      'الكاشير': r.cashierName || r.cashierId,
+    }));
+  XLSX.utils.book_append_sheet(wb, sheetOrEmpty(returnRows, 'لا توجد مرتجعات'), 'المرتجعات');
+
+  const paymentRows = [...data.payments]
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .map(p => {
+      const customer = data.customers.find(c => c.id === p.customerId);
+      return {
+        'العميل': customer?.name || p.customerId,
+        'التاريخ': p.createdAt ? new Date(p.createdAt).toLocaleString('ar-EG') : '',
+        'الفرع': branchName(shop, p.branchId),
+        'المبلغ': p.amount,
+        'ملاحظة': p.note || '',
+        'الكاشير': p.cashierName || p.cashierId,
+      };
+    });
+  XLSX.utils.book_append_sheet(wb, sheetOrEmpty(paymentRows, 'لا توجد دفعات'), 'دفعات العملاء');
 
   const wbout = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
   downloadBlob(

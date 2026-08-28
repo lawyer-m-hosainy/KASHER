@@ -10,12 +10,14 @@ interface PrintableReceiptProps {
   discount?: number;
   total: number;
   vatAmount?: number;
+  paid?: number;
+  due?: number;
   date: Date;
   printerSettings?: PrinterSettings;
 }
 
 export const PrintableReceipt = forwardRef<HTMLDivElement, PrintableReceiptProps>(
-  ({ shopName, cashierName, customerName, items, subtotal, discount, total, vatAmount, date, printerSettings }, ref) => {
+  ({ shopName, cashierName, customerName, items, subtotal, discount, total, vatAmount, paid, due, date, printerSettings }, ref) => {
     const widthClass = printerSettings?.type === 'a4' ? 'w-[210mm]' : 'w-[80mm]';
     const textSizeClass = printerSettings?.type === 'a4' ? 'text-base' : 'text-sm';
     
@@ -80,8 +82,20 @@ export const PrintableReceipt = forwardRef<HTMLDivElement, PrintableReceiptProps
             <span>الصافي:</span>
             <span>{total.toFixed(2)} ج.م</span>
           </div>
+          {due !== undefined && due > 0 && (
+            <>
+              <div className="flex justify-between text-sm">
+                <span>المدفوع:</span>
+                <span>{(paid ?? 0).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm font-bold">
+                <span>المتبقي (آجل):</span>
+                <span>{due.toFixed(2)}</span>
+              </div>
+            </>
+          )}
         </div>
-        
+
         <p className="mt-8 text-xs text-center font-bold">شكراً لزيارتكم!</p>
       </div>
     );
